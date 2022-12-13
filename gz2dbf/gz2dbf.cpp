@@ -12,17 +12,29 @@ using namespace filesystem;
 long calcPosition(Datetime &base, Datetime &t, char archType);
 int proc(const char* pathAgz, const char* pathBin, const char* pathDbf);
 bool runAndWaitProc(string command);
-
  
 ///---------------------main------------------------///
 int main(int argc, char* args[])
 {
-
-	path pathGzFolder(L"C:\\Users\\RGaleev\\Downloads\\eitp\\USO_ARCH.U1\\MODBUS_M\\1\\1\\1");
-	path pathDbFolder(L"C:\\Users\\RGaleev\\Downloads\\eitp\\arc\\TUR_SHK2\\modbus_m\\1\\1\\1");
+	if (argc<3)
+	{
+		path p0 = args[0];
+		printf("---\neror use...\n %s path_to_gz_folder path_to_dbf_folder\n", p0.filename().string().c_str());
+		return 1;
+	}
+	path pathGzFolder(args[1]);
+	path pathDbFolder(args[2]);
 
 	// check hours data
-	for (path it : filesystem::directory_iterator(path(pathGzFolder/L"H")))
+
+	path folder = pathGzFolder / L"H";
+	if(!filesystem::exists(folder))
+	{
+		printf("folder noot found");
+		return 1;
+	}
+
+	for (path it :directory_iterator(folder))
 	{
 		//path p = it.path();
 		printf("%s\n", it.string().c_str());
@@ -46,14 +58,11 @@ int main(int argc, char* args[])
 				{
 					printf(e.what());
 				}
-				
-					
 			}
-
 		}
 		else
 		{
-printf("ignore\n");
+			printf("ignore\n");
 		}
 		printf("---\n");
 	}
@@ -92,27 +101,45 @@ int proc(const char* pathAgz, const char* pathBin, const char* pathDbf)
 	}
 	
 	char bdName[255];
-	Datetime base("01.01.2022 12:00:00");
+	
 	bool rez=false;
 
 	for (gz::Record* rec : agz->data)
 	{
-		string type = "";
-		Datetime t2(rec->date);
-		long position = calcPosition(base,t2, agz->ahead.qry.arch_type);
-		if (position <0 || position > adb->size - 1) continue;
+		string type = "";	
+		Datetime t2(rec->date); 
+		char chtime[32];
 		switch (agz->ahead.qry.arch_type)
 		{
 		case 'H':
-			sprintf_s(bdName, "h%02d%02d_%02d", (rec->date.year - 2000), rec->date.month, agz->ahead.dev_type);
-			printf("%s",bdName);
+			sprintf_s(chtime,"01.%02d.%04d 00:00:00",rec->date.month, rec->date.year);
+			sprintf_s(bdName, "h%02d%02d_%02d", (rec->date.year - 2000), rec->date.month, agz->ahead.qry.uso);
+			break;
+		case 'D':
+			sprintf_s(chtime, "01.01.%04d 12:00:00", rec->date.year);
+			sprintf_s(bdName, "d%02d01_%02d", (rec->date.year - 2000), agz->ahead.qry.uso);
+			break;
+		default:
+			printf("gz no support\n");
+			return 1;
+		}
+		//printf("%s\n", bdName);
+		//printf("%s\n", chtime);
+
+		Datetime baseTime(chtime);
+		long position = calcPosition(baseTime,t2, agz->ahead.qry.arch_type);
+		if (position <0 || position > adb->size - 1) continue;
+
+		switch (agz->ahead.qry.arch_type)
+		{
+		case 'H':
+
 			type = "hours";
 			if (adb->isEmpty(position) == 0)continue;
 			rez=adb->write("TIME_STAMP", position, t2.timestamp());
 
 			break;
 		case 'D':
-			sprintf_s(bdName, "d%02d01_%02d", (rec->date.year - 2000), rec->date.month, agz->ahead.dev_type);
 			printf("%s", bdName);
 			type = "days";
 			t2.shift(24 * 60 * 60);
@@ -124,6 +151,7 @@ int proc(const char* pathAgz, const char* pathBin, const char* pathDbf)
 			printf("gz no support\n");
 			return 1;
 		}
+
 
 		if (rez) printf("write %s record %s\n",type.c_str(), t2.timestamp().c_str());
 		adb->write("VC_M3", position, ((float)rec->Vc) / 1000);
@@ -196,3 +224,4 @@ bool runAndWaitProc(string command)
 	win::CloseHandle(pi.hThread);
 	return true;
 }
+
